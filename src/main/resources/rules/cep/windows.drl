@@ -1,0 +1,171 @@
+package cn.com.fusio.cep
+
+import cn.com.fusio.event.CEPEvent
+
+import java.util.ArrayList
+
+declare PageViewEvent
+	@role( event )
+end
+
+declare PagePingEvent
+	@role( event )
+end
+
+//0-1.将 Event 转换为 event 类型， 使用 Stream 模式进行 CEP 处理
+declare CEPEvent				// 给 fact 事实 添加属性  ， 也可以不声明 fact 事实， 在 此处 定义fact事实 (属性都可以定义)
+    @role( event )				// role(event|fact)
+    @timestamp (collector_tstamp) 	// 将 CEPEvent事实中的 createTime 属性值 ， 赋值给 元数据 @timestamp
+    @duration(10)			// 设置 事件的持续事件 ， default: duration(0)
+    @expires( 30m )			// 内存管理：当一个事件不再匹配事实，激活规则（有活化的规则），事件自动失效（在 work-memory 中的 保留时长）
+end
+
+//0-2.声明 Slide Window ，复用 window
+// declare length window , 从 CEP_STREAM001 中获取  10个长度
+declare window len
+	CEPEvent()
+		over window:length(5) from entry-point CEP_STREAM001
+end
+// declare time window , 从 CEP_STREAM002 中 获取 最近 5秒内的 Event 
+declare window time 
+	CEPEvent()
+		over window:time(5s) from entry-point CEP_STREAM002
+end 
+
+
+
+//rule "always"
+//    when
+//        eval(true)
+//    then
+//        System.out.println("CEP Test::mode:stream");
+//    end
+
+//1.collect 事件收集    
+rule "cep_func_collect"
+	when
+		CEPEvent() from entry-point CEP_STREAM03		//需要加这个条件，负责 then里的内容，不同的 entry-point也会执行
+		$list: ArrayList() from collect(CEPEvent() from entry-point CEP_STREAM03)
+	then
+		//System.out.println("test_collect::list: "+$list.size());
+		if($list.size() % 5 == 0 ){
+			System.out.println("list size % 5 == 0; current size : "+$list.size());
+		}
+	end
+	
+//2.accumulate-total
+rule "cep_func_accumulate_total"
+	when
+		CEPEvent() from entry-point CEP_STREAM04 
+		$totalAge:Number()
+		from accumulate(
+			$event: CEPEvent() from entry-point CEP_STREAM04 , 
+			init(int totalAge = 0 ;),
+			action(totalAge += $event.getAge();),
+			reverse(totalAge -= $event.getAge();),
+			result(totalAge)
+		)
+	then
+		System.out.println("totalAge = "+$totalAge);
+	end
+	
+//3.accumulate-average()
+rule "cep_func_accumulate_average"
+	when
+		CEPEvent() from entry-point CEP_STREAM05 
+		$avgAge: Object() from accumulate(
+			$event: CEPEvent() from entry-point CEP_STREAM05 ,
+			average($event.getAge())
+		)
+	then
+		System.out.println("avgAge = "+$avgAge);
+	end
+	
+//4.accumulate-colectList
+rule "cep_func_accumulate_collectList"
+	duration(2s)
+	when
+		CEPEvent() from entry-point CEP_STREAM06
+		$ageList: Object() from accumulate(
+			$event: CEPEvent() from entry-point CEP_STREAM06 ,
+			collectList($event.getAge())
+		)
+	then
+		System.out.println("avgAge = "+$ageList);
+	end
+	
+//5.slide windows
+rule "cep_slide_windows_lengthAndTime"
+	when
+		CEPEvent() from entry-point CEP_STREAM07
+		//窗口长度为 2 ， 没有2个 event 就进行统计
+		$avgAge_2L: Number()
+		from accumulate(
+			CEPEvent($age:age) over window:length(2) from entry-point CEP_STREAM07,
+			average($age)
+		)
+		//有问题：List 初始化一次后，就不会重新创建
+		$ageList_5s: Object()
+		from accumulate(
+			CEPEvent($age:age) over window:time(5s) from entry-point CEP_STREAM07,
+			collectList($age)
+		)
+		
+	then
+		System.out.println("avgAge_5s = "+$avgAge_2L);	
+		System.out.println("ageList_5s = "+$ageList_5s);
+	end
+	
+//6.declare window test
+//6.1.测试 window length 
+rule "declare_window_length"		
+	when
+		CEPEvent() from window len
+		accumulate( $event: CEPEvent() from window len , 
+			$cnt: count(1),
+			$collectLst: collectList($event)	
+		) 
+	then 
+		System.out.println($cnt) ;
+ 	    for(int i = 0 ; i < $collectLst.size(); i++ ){
+ 	    	System.out.println($collectLst.get(i)) ;
+ 	    }
+ 	    System.out.println() ; 
+	end	
+	
+//6.2.window time
+rule "declare_window_time"		
+	when
+		CEPEvent() from window time
+		accumulate( $event:CEPEvent() from window time , 
+			$cnt: count(1),				// 统计当前 window 中的 event 数量
+			$collectLst: collectList($event)	
+		) 
+	then 
+		System.out.println($cnt) ;
+ 	    for(int i = 0 ; i < $collectLst.size(); i++ ){
+ 	    	System.out.println($collectLst.get(i)) ;
+ 	    }
+ 	    System.out.println() ; 
+	end	
+
+//7.slide window 
+rule "slide_win_after"			//A 发生后 [0,5s] 内 B发生
+	when
+		$eventA: CEPEvent() from entry-point SLIDE_WINDOW_001
+		$eventB: CEPEvent( this after[0,5s] $eventA ) from entry-point SLIDE_WINDOW_001
+	then
+		System.out.println($eventA);
+		System.out.println($eventB+"\n");
+	end
+
+
+//real case: compute access_time
+rule "compute_access_time"
+	when
+		$pvEvent:PageViewEvent() from entry-point STREAM_PV
+	then
+		System.out.println($pvEvent) ;
+	end
+
+

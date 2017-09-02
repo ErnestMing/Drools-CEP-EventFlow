@@ -1,0 +1,48 @@
+package cn.com.fuso.cep.expire_month_1
+
+import cn.com.fusio.event.merge.PinganEduPVEnrich
+import java.util.ArrayList
+
+import cn.com.fusio.drools.actions.RuleActionInvoker
+
+// 捕捉行为事件
+declare PinganEduPVEnrich
+    @role( event )				// role(event|fact)
+    @timestamp (eventTime) 	// 将 CEPEvent事实中的 createTime 属性值 ， 赋值给 元数据 @timestamp
+//    @duration(7d)			// 设置 事件的持续事件 ， default: duration(0)
+    @expires( 30d )			// 内存管理：当一个事件不再匹配事实，激活规则（有活化的规则），事件自动失效（在 work-memory 中的 保留时长）
+end
+
+//============================================== Rules 以用户为中心 ========================================================
+// ==================================================== 产品 ==============================================
+// 一、行为积累
+// rule01
+rule "tags=(健康) & count>4 in one month"
+    agenda-group "pingan_breed_1month"
+    when
+        $bdList:ArrayList() from collect ( PinganEduPVEnrich(containTags("健康"))
+        over window:time(30d) from entry-point pingan_breed_1month)
+    then
+        //count>4
+        RuleActionInvoker.act_when_AccFre_gt_n($bdList,4);
+    end
+
+// rule03
+rule "count>8 in one month"
+    agenda-group "pingan_breed_1month"
+    when
+        $bdList:ArrayList() from collect ( PinganEduPVEnrich()
+        over window:time(30d) from entry-point pingan_breed_1month)
+    then
+        RuleActionInvoker.act_when_AccFre_gt_n($bdList,8);
+    end
+
+//二、属性及行为组合
+// rule01
+
+//三、指定内容及时触发
+// rule01 此处需要 PagePing
+
+
+
+

@@ -1,0 +1,72 @@
+package cn.com.fuso.cep.expire_week_1
+
+import cn.com.fusio.event.merge.PinganEduPVEnrich
+import java.util.ArrayList
+
+import cn.com.fusio.drools.actions.RuleActionInvoker
+
+// 捕捉行为事件
+declare PinganEduPVEnrich
+    @role( event )				// role(event|fact)
+    @timestamp (eventTime) 	// 将 CEPEvent事实中的 createTime 属性值 ， 赋值给 元数据 @timestamp
+//    @duration(7d)			// 设置 事件的持续事件 ， default: duration(0)
+    @expires( 7d )			// 内存管理：当一个事件不再匹配事实，激活规则（有活化的规则），事件自动失效（在 work-memory 中的 保留时长）
+end
+
+//============================================== Rules 以用户为中心 ========================================================
+// ==================================================== 产品 ==============================================
+// 一、行为积累
+// rule01
+rule "tags=(保险) & count>2 in one week"
+    agenda-group "pingan_breed_1week
+//    salience 100
+    when
+        $bdList:ArrayList() from collect ( PinganEduPVEnrich(containTags("保险"))
+        over window:time(7d) from entry-point pingan_breed_1week)
+    then
+        //count>2
+        RuleActionInvoker.act_when_AccFre_gt_n($bdList,2);
+    end
+
+
+//二、属性及行为组合
+// rule01
+rule "tags=(育儿) & count>3 & age>27 in one week"
+    agenda-group "pingan_breed_1week"
+//    salience 100
+    when
+        $bdList:ArrayList() from collect ( PinganEduPVEnrich(containTags("育儿") ,isAgeGtNum(27))
+        over window:time(7d) from entry-point pingan_breed_1week)
+    then
+        //count>2
+        RuleActionInvoker.act_when_AccFre_gt_n($bdList,3);
+    end
+
+// rule02
+ rule "tags=(健康) & count>1 & age>30 in one week"
+     agenda-group "pingan_breed_1week"
+     when
+         $bdList:ArrayList() from collect ( PinganEduPVEnrich(containTags("健康") ,isAgeGtNum(30))
+         over window:time(7d) from entry-point pingan_breed_1week)
+     then
+         //count>2
+         RuleActionInvoker.act_when_AccFre_gt_n($bdList,1);
+     end
+
+// rule03
+ rule "tags=(保险) & count>1 & province(北京|上海|广东|浙江) in one week"
+     agenda-group "pingan_breed_1week"
+     when
+         $bdList:ArrayList() from collect ( PinganEduPVEnrich(containTags("健康") ,isBelongToProvince("北京","上海","广东","浙江 "))
+          over window:time(7d) from entry-point pingan_breed_1week)
+     then
+         //count>2
+         RuleActionInvoker.act_when_AccFre_gt_n($bdList,1);
+     end
+
+//三、指定内容及时触发
+
+
+
+
+

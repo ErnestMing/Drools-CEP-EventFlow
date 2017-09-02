@@ -1,0 +1,147 @@
+package cn.com.fuso.cep.product
+
+import cn.com.fusio.event.merge.PinganEduPVEnrich
+import java.util.ArrayList
+
+import cn.com.fusio.drools.actions.RuleActionInvoker
+import cn.com.fusio.utils.LoggerUtil
+import cn.com.fusio.utils.RedisUtil
+import cn.com.fusio.cache.RedisConstant
+
+// 捕捉行为事件
+declare PinganEduPVEnrich
+    @role( event )				// role(event|fact)
+    @timestamp (eventTime) 	// 将 CEPEvent事实中的 createTime 属性值 ， 赋值给 元数据 @timestamp
+    @duration(30d)			// 设置 事件的持续事件 ， default: duration(0)
+    @expires( 30d )			// 内存管理：当一个事件不再匹配事实，激活规则（有活化的规则），事件自动失效（在 work-memory 中的 保留时长）
+end
+
+//============================================== Rules 以用户为中心 ========================================================
+// ==================================================== 产品 ==============================================
+// 一、行为积累
+// rule01
+rule "tags=(保险) & count>2 in one week"
+    agenda-group "pingan_breed_edu_bd"
+//    salience 100
+    when
+        $bdList:ArrayList() from collect ( PinganEduPVEnrich(behaviorData.getEvent_name()=="page_view" ,
+                                                        containTags("保险"))
+        over window:time(7d) from entry-point pingan_breed_edu_bd)
+    then
+        //count>2
+        RuleActionInvoker.act_when_AccFre_gt_n(drools.getRule().getName(),$bdList,2);
+    end
+
+// rule02
+rule "tags=(健康) & count>4 in one month"
+    agenda-group "pingan_breed_edu_bd"
+    when
+        $bdList:ArrayList() from collect (  PinganEduPVEnrich(behaviorData.getEvent_name()=="page_view",
+                                            containTags("健康")
+                                         )
+        over window:time(30d) from entry-point pingan_breed_edu_bd)
+    then
+        //count>4
+        RuleActionInvoker.act_when_AccFre_gt_n(drools.getRule().getName(),$bdList,4);
+    end
+
+// rule03
+rule "count>8 in one month"
+    agenda-group "pingan_breed_edu_bd"
+    when
+        $bdList:ArrayList() from collect ( PinganEduPVEnrich(behaviorData.getEvent_name()=="page_view")
+        over window:time(30d) from entry-point pingan_breed_edu_bd)
+    then
+        RuleActionInvoker.act_when_AccFre_gt_n(drools.getRule().getName(),$bdList,8);
+    end
+
+
+//二、属性及行为组合
+// rule01
+rule "tags=(育儿) & count>3 & age>27 in one week"
+    agenda-group "pingan_breed_edu_bd"
+//    salience 100
+    when
+        $bdList:ArrayList() from collect ( PinganEduPVEnrich(behaviorData.getEvent_name()=="page_view" ,
+                                                        containTags("育儿") ,
+                                                        isAgeGtNum(27)
+                                          )
+        over window:time(7d) from entry-point pingan_breed_edu_bd)
+    then
+        //count>2
+        RuleActionInvoker.act_when_AccFre_gt_n(drools.getRule().getName(),$bdList,3);
+    end
+
+// rule02
+ rule "tags=(健康) & count>1 & age>30 in one week"
+     agenda-group "pingan_breed_edu_bd"
+     when
+         $bdList:ArrayList() from collect ( PinganEduPVEnrich(behaviorData.getEvent_name()=="page_view" ,
+                                                containTags("健康") ,
+                                                isAgeGtNum(30)
+                                          )
+         over window:time(7d) from entry-point pingan_breed_edu_bd)
+     then
+         //count>2
+         RuleActionInvoker.act_when_AccFre_gt_n(drools.getRule().getName(),$bdList,2);
+     end
+
+// rule03
+ rule "tags=(保险) & count>1 & province(北京|上海|广东|浙江) in one week"
+     agenda-group "pingan_breed_edu_bd"
+     when
+         $bdList:ArrayList() from collect ( PinganEduPVEnrich(behaviorData.getEvent_name()=="page_view" ,
+                                                 containTags("健康") ,
+                                                 isBelongToProvince("北京","上海","广东","浙江 ")
+                                          )
+         over window:time(7d) from entry-point pingan_breed_edu_bd)
+     then
+         //count>2
+         RuleActionInvoker.act_when_AccFre_gt_n(drools.getRule().getName(),$bdList,1);
+     end
+
+//三、指定内容及时触发
+// rule01 此处需要 PagePing , 选取page_view后， 30分钟内的同一个session的page_ping，根据个数计算访问时长
+// 当  accDep > 30s 时 ， 需要  size() == 3 , 否则同一个 PageView+PagePing构成的一个用户浏览记录会多次触发 ， Action， （触发Action，会根据PagePing触发）
+rule "url:AccDep>30s in 30 minutes"
+  agenda-group "pingan_breed_edu_bd"
+     when
+       $pvEvent :PinganEduPVEnrich(behaviorData.getEvent_name()=="p age_view") from entry-point pingan_breed_edu_bd
+       $ppList:ArrayList(size() == 3) from collect (
+                  PinganEduPVEnrich(behaviorData.getEvent_name()=="page_ping" ,
+                                      behaviorData.getPage_url() == $pvEvent.getBehaviorData().getPage_url()  ,
+                                      behaviorData.getDomain_sessionid() == $pvEvent.getBehaviorData().getDomain_sessionid()  ,
+                                      this after[0,30m] $pvEvent)
+                  from entry-point pingan_breed_edu_bd
+              )
+     then
+        if(!RedisUtil.isExistInSet(RedisConstant.sent_lt_1_day_key,$pvEvent.getBehaviorData().getUserid())){
+            LoggerUtil.info("DRLRuleAction","match:rule=["+drools.getRule().getName()+"]");
+            LoggerUtil.info("DRLRuleAction",String.format("PV:event_name=[%s],domain_sessionid=[%s],collector_tstamp=[%s]",
+                                    $pvEvent.getBehaviorData().getEvent_name(),
+                                    $pvEvent.getBehaviorData().getDomain_sessionid(),
+                                    $pvEvent.getBehaviorData().getCollector_tstamp()));
+//            $ppList.forEach(x -> {
+//                PinganEduPVEnrich bd = (PinganEduPVEnrich)x ;
+//                LoggerUtil.info("DRLRuleAction",String.format("PP:event_name=[%s],domain_sessionid=[%s],collector_tstamp=[%s]",
+//                                                                                     bd.getBehaviorData().getEvent_name(),
+//                                                                                     bd.getBehaviorData().getDomain_sessionid(),
+//                                                                                     bd.getBehaviorData().getCollector_tstamp()));});
+            LoggerUtil.info("DRLRuleAction","---->sendEmail to curUserId="+$pvEvent.getBehaviorData().getUserid() +"  accessTime="+$ppList.size()*10+"s");
+            // 缓存到 Redis
+            RedisUtil.saveObj2Set(RedisConstant.sent_lt_1_day_key,$pvEvent.getBehaviorData().getUserid());
+        }else {
+            LoggerUtil.info("DRLRuleAction","----> once sendEmail to curUserId="+$pvEvent.getBehaviorData().getUserid() +"  accessTime="+$ppList.size()*10+"s");
+        }
+
+        LoggerUtil.info("DRLRuleAction","-----------------------------------------------------------------");
+     end
+
+//rule "完成了某个表单的测验（url）"
+//     agenda-group "pingan_breed_edu_bd"
+//     when
+//
+//     then
+//
+//         //count>2
+//     end

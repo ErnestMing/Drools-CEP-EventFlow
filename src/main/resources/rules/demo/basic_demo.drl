@@ -1,0 +1,13 @@
+package cn.com.fuso.demo
+
+import cn.com.fusio.event.merge.PinganEduPVEnrich
+import java.util.ArrayList
+
+
+rule "test嵌套entity"
+    agenda-group "basic_group"
+	when
+	    $bd:PinganEduPVEnrich()
+	then
+		System.out.println("----> basic_rule: "+$bd) ;
+	end

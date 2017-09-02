@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kmodule xmlns="http://jboss.org/kie/6.0.0/kmodule">
+
+    <!-- test_cep -->
+    <kbase name="cep" packages="rules.cep"  eventProcessingMode="stream" >
+        <ksession name="ksession-cep"/>
+    </kbase>
+
+    <!-- test_basic -->
+    <kbase name="basic_demo" packages="rules.demo.basic_demo" eventProcessingMode = "cloud" equalsBehavior="identity">
+        <ksession name = "kiesession_basic_demo" type="stateful" clockType="realtime" beliefSystem="simple"/>
+    </kbase>
+
+    <!-- Demo -->
+    <kbase name="cep_demo" packages="rules.demo" eventProcessingMode = "stream" equalsBehavior="equality">
+    	<ksession name = "kession_pingan_breed_demo" type="stateful" clockType="realtime" beliefSystem="simple"/>
+    </kbase>
+
+    <!-- 产品 -->
+    <kbase name="kbase_product" packages="rules.official" eventProcessingMode = "stream" equalsBehavior="equality">
+        <!--平安教化-PV数据处理：访问频率-->
+        <ksession name = "ks_pingan_breed_edu_bd" type="stateful" clockType="realtime" beliefSystem="simple"/>
+        <!--平安教化-PV_PP数据处理：访问深度-->
+        <ksession name = "ks_pingan_breed_edu_pv_pp" type="stateful" clockType="realtime" beliefSystem="simple"/>
+    </kbase>
+
+    <kbase name="kbase_product_test" packages="rules.v2" eventProcessingMode = "stream" equalsBehavior="equality">
+        <ksession name = "ks_pingan_breed_edu_pv_v2" type="stateful" clockType="realtime" beliefSystem="simple"/>
+    </kbase>
+
+
+</kmodule>
